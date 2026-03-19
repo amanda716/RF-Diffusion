@@ -130,58 +130,73 @@ def save_mimo(out_dir, data, pred, cond, batch, index=0):
     plt.savefig(file_name, dpi=800)
 
 
-def save_wifi(out_dir, data, pred, cond, batch, index=0):
-    scio.savemat(f'./dataset/wifi/output/{batch}-{index}.mat',{'pred':pred.numpy()})
+def save_wifi(out_dir, data, pred, cond, batch, index=0, gesture_label=None, global_index=None):
+    os.makedirs(out_dir, exist_ok=True)
+
+    # If no global index is given, fall back to batch-index style
+    if global_index is None:
+        global_index = batch * 100000 + index
+
+    # If gesture_label is available, keep it in the filename
+    if gesture_label is None:
+        save_name = f"{global_index}-0.mat"
+    else:
+        save_name = f"{global_index}-{int(gesture_label)}.mat"
+
+    scio.savemat(
+        os.path.join(out_dir, save_name),
+        {
+            'pred': pred.numpy(),
+            'cond': cond.numpy()
+        }
+    )
+
     os.makedirs('./dataset/wifi/img/', exist_ok=True)
     os.makedirs('./dataset/wifi/img_matric/data', exist_ok=True)
     os.makedirs('./dataset/wifi/img_matric/pred', exist_ok=True)
-    file_name = os.path.join('./dataset/wifi/img', f'out-{batch}-{index}.jpg')
-    file_name_data = os.path.join('./dataset/wifi/img_matric/data', f'out-{batch}-{index}.jpg')
-    file_name_pred = os.path.join('./dataset/wifi/img_matric/pred', f'out-{batch}-{index}.jpg')
-    
+
+    stem = os.path.splitext(save_name)[0]
+    file_name = os.path.join('./dataset/wifi/img', f'{stem}.jpg')
+    file_name_data = os.path.join('./dataset/wifi/img_matric/data', f'{stem}.jpg')
+    file_name_pred = os.path.join('./dataset/wifi/img_matric/pred', f'{stem}.jpg')
+
     data = data[0, :, 0].reshape(512)
     pred = pred[0, :, 0].reshape(512)
-    # Compute the STFT for data and pred
-    n_fft = 24  # Choose an appropriate value for your data
-    hop_length = 17  # Choose an appropriate value for your data
+
+    n_fft = 24
+    hop_length = 17
     data_spec = torch.stft(data, n_fft=n_fft, hop_length=hop_length)
     pred_spec = torch.stft(pred, n_fft=n_fft, hop_length=hop_length)
-    # Convert the complex spectrograms to magnitude spectrograms
+
     data_spec_mag = torch.abs(data_spec)
     pred_spec_mag = torch.abs(pred_spec)
-    # Convert the magnitude spectrograms to dB scale using numpy
-    data_spec_dB = 20 * np.log10(data_spec_mag.numpy() + 1e-6)  # Adding a small constant to avoid log(0)
+
+    data_spec_dB = 20 * np.log10(data_spec_mag.numpy() + 1e-6)
     pred_spec_dB = 20 * np.log10(pred_spec_mag.numpy() + 1e-6)
-    # Create a subplot with two columns (one for each spectrogram)
-    # 绘制并保存第一个图表
+
     plt.figure(figsize=(6, 3))
     ax1 = plt.subplot(1, 2, 1)
-    im1 = ax1.matshow(data_spec_dB, cmap='viridis', origin='lower')    
+    im1 = ax1.matshow(data_spec_dB, cmap='viridis', origin='lower')
     ax1.set_title('Data Spectrogram (dB)')
-    plt.colorbar(im1, format='%+2.0f dB', ax=ax1,orientation='horizontal', pad=0.05)
+    plt.colorbar(im1, format='%+2.0f dB', ax=ax1, orientation='horizontal', pad=0.05)
 
     ax2 = plt.subplot(1, 2, 2)
     im2 = ax2.matshow(pred_spec_dB, cmap='viridis', origin='lower')
     ax2.set_title('Prediction Spectrogram (dB)')
-    plt.colorbar(im2, format='%+2.0f dB', ax=ax2,orientation='horizontal', pad=0.05)
+    plt.colorbar(im2, format='%+2.0f dB', ax=ax2, orientation='horizontal', pad=0.05)
 
-    # 保存整个图表为 jpg 文件
     plt.savefig(file_name)
     plt.close()
 
-    # 绘制并保存第二个图表（不包括坐标轴）
     plt.figure(figsize=(6, 7))
-    plt.imshow(data_spec_dB, cmap='viridis', origin='lower')    
+    plt.imshow(data_spec_dB, cmap='viridis', origin='lower')
     plt.axis('off')
-    # 保存图片（不包括坐标轴）
     plt.savefig(file_name_data, bbox_inches='tight', pad_inches=0)
     plt.close()
 
-    # 绘制并保存第三个图表（不包括坐标轴）
     plt.figure(figsize=(6, 7))
-    plt.imshow(pred_spec_dB, cmap='viridis', origin='lower')    
+    plt.imshow(pred_spec_dB, cmap='viridis', origin='lower')
     plt.axis('off')
-    # 保存图片（不包括坐标轴）
     plt.savefig(file_name_pred, bbox_inches='tight', pad_inches=0)
     plt.close()
 
@@ -266,86 +281,160 @@ def main(args):
     params = all_params[args.task_id]
     model_dir = args.model_dir or params.model_dir
     out_dir = args.out_dir or params.out_dir
-    if args.task_id in [0,1]:
+
+    if args.task_id in [0, 1]:
         fid_data_dir = params.fid_data_dir
         fid_pred_dir = params.fid_pred_dir
+
     if args.cond_dir is not None:
         params.cond_dir = args.cond_dir
-    device = torch.device(
-        'cpu') if args.device == 'cpu' else torch.device('cuda')
+
+    device = torch.device('cpu') if args.device == 'cpu' else torch.device('cuda')
+
     # Lazy load model.
     if os.path.exists(f'{model_dir}/weights.pt'):
         checkpoint = torch.load(f'{model_dir}/weights.pt')
     else:
         checkpoint = torch.load(model_dir)
-    if args.task_id==0:
+
+    if args.task_id == 0:
         model = tfdiff_WiFi(AttrDict(params)).to(device)
-    elif args.task_id==1:
+    elif args.task_id == 1:
         model = tfdiff_fmcw(AttrDict(params)).to(device)
-    elif args.task_id==2:
+    elif args.task_id == 2:
         model = tfdiff_mimo(AttrDict(params)).to(device)
-    elif args.task_id==3:
+    elif args.task_id == 3:
         model = tfdiff_eeg(AttrDict(params)).to(device)
+    else:
+        raise ValueError("Unexpected task_id.")
+
     model.load_state_dict(checkpoint['model'])
     model.eval()
     model.params.override(params)
+
     # Initialize diffusion object.
-    diffusion = SignalDiffusion(
-        params) if params.signal_diffusion else GaussianDiffusion(params)
+    diffusion = SignalDiffusion(params) if params.signal_diffusion else GaussianDiffusion(params)
+
     # Construct inference dataset.
     dataset = from_path_inference(params)
+
     # Sampling process.
     with torch.no_grad():
         cur_batch = 0
         ssim_list = []
         snr_list = []
-      
-        for features in tqdm(dataset, desc=f'Epoch {cur_batch // len(dataset)}'):
-            features = _nested_map(features, lambda x: x.to(
-                device) if isinstance(x, torch.Tensor) else x)
+
+        # global running index for naming WiFi outputs
+        global_sample_idx = 0
+
+        for features in tqdm(dataset, desc=f'Epoch {cur_batch // max(len(dataset), 1)}'):
+            features = _nested_map(
+                features,
+                lambda x: x.to(device) if isinstance(x, torch.Tensor) else x
+            )
+
             data = features['data']
             cond = features['cond']
-            
+
             if args.task_id in [0, 1]:
                 # pred = diffusion.sampling(model, cond, device)
                 # pred = diffusion.robust_sampling(model, cond, device)
                 # pred = diffusion.fast_sampling(model, cond, device)
                 pred = diffusion.native_sampling(model, data, cond, device)
-                data_samples = [torch.view_as_complex(sample) for sample in torch.split(data, 1, dim=0)] # [B, [1, N, S]]
-                pred_samples = [torch.view_as_complex(sample) for sample in torch.split(pred, 1, dim=0)] # [B, [1, N, S]]
-                cond_samples = [torch.view_as_complex(sample) for sample in torch.split(cond, 1, dim=0)] # [B, [1, N, S]]
+
+                data_samples = [torch.view_as_complex(sample) for sample in torch.split(data, 1, dim=0)]
+                pred_samples = [torch.view_as_complex(sample) for sample in torch.split(pred, 1, dim=0)]
+                cond_samples = [torch.view_as_complex(sample) for sample in torch.split(cond, 1, dim=0)]
+
                 for b, p_sample in enumerate(pred_samples):
                     d_sample = data_samples[b]
-                    cur_ssim = eval_ssim(p_sample, d_sample, params.sample_rate, params.input_dim, device=device)
-                    # Save the SSIM.
+                    c_sample = cond_samples[b]
+
+                    cur_ssim = eval_ssim(
+                        p_sample,
+                        d_sample,
+                        params.sample_rate,
+                        params.input_dim,
+                        device=device
+                    )
                     ssim_list.append(cur_ssim.item())
-                    
-                    if args.task_id:
-                        save_fmcw(out_dir, d_sample.cpu().detach(), p_sample.cpu().detach(), cond_samples[b].cpu().detach(), cur_batch,b)
+
+                    if args.task_id == 1:
+                        save_fmcw(
+                            out_dir,
+                            d_sample.cpu().detach(),
+                            p_sample.cpu().detach(),
+                            c_sample.cpu().detach(),
+                            cur_batch,
+                            b
+                        )
                     else:
-                        save_wifi(out_dir, d_sample.cpu().detach(), p_sample.cpu().detach(), cond_samples[b].cpu().detach(), cur_batch,b)
+                        # --------------------------------------------------
+                        # Recover gesture label from one-hot condition vector
+                        # --------------------------------------------------
+                        cond_vec = c_sample.squeeze()
+
+                        if torch.is_complex(cond_vec):
+                            cond_vec_real = cond_vec.real
+                        else:
+                            cond_vec_real = cond_vec
+
+                        # If cond is not already 1D, flatten it
+                        cond_vec_real = cond_vec_real.reshape(-1)
+
+                        gesture_label = int(torch.argmax(cond_vec_real).item())
+
+                        save_wifi(
+                            out_dir,
+                            d_sample.cpu().detach(),
+                            p_sample.cpu().detach(),
+                            c_sample.cpu().detach(),
+                            cur_batch,
+                            b,
+                            gesture_label=gesture_label,
+                            global_index=global_sample_idx
+                        )
+
+                        global_sample_idx += 1
+
                 cur_batch += 1
-            if args.task_id in [2, 3]:
+
+            elif args.task_id in [2, 3]:
                 # pred = diffusion.sampling(model, cond, device)
                 # pred = diffusion.robust_sampling(model, cond, device)
                 pred = diffusion.fast_sampling(model, cond, device)
                 # pred, _ = diffusion.native_sampling(model, data, cond, device)
+
                 if args.task_id == 3:
                     pred = pred.squeeze(2)
                     pred = pred.squeeze(2)
                     data = data.squeeze(2)
                     data = data.squeeze(2)
-                    pred = pred[:,:,0]
-                    data = data[:,:,0]
-                    snr_list.append(cal_SNR_EEG(pred,data))
+
+                    pred = pred[:, :, 0]
+                    data = data[:, :, 0]
+
+                    snr_list.append(cal_SNR_EEG(pred, data))
                     save(out_dir, pred.cpu().detach(), cond.cpu().detach(), cur_batch)
                 else:
-                    snr_list.append(cal_SNR_MIMO(pred,data))
-                    save_mimo(out_dir, data.cpu().detach(), pred.cpu().detach(), cond.cpu().detach(), cur_batch)
+                    snr_list.append(cal_SNR_MIMO(pred, data))
+                    save_mimo(
+                        out_dir,
+                        data.cpu().detach(),
+                        pred.cpu().detach(),
+                        cond.cpu().detach(),
+                        cur_batch
+                    )
+
                 cur_batch += 1
-        if args.task_id in [0,1]:
-            print_fid(fid_pred_dir,fid_data_dir,args.task_id)
+
+            else:
+                raise ValueError("Unexpected task_id.")
+
+        if args.task_id in [0, 1]:
+            print_fid(fid_pred_dir, fid_data_dir, args.task_id)
             print(f'Average SSIM: {np.mean(ssim_list)}')
+
         if args.task_id in [2, 3]:
             print(f'Average SNR: {np.mean(snr_list)}.')
 
