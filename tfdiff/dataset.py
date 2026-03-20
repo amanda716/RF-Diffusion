@@ -133,7 +133,7 @@ class Collator:
 
         if task_id == 0:
             for record in minibatch:
-                if len(record['data']) < sample_rate:
+                if record['data'].shape[0] < sample_rate:
                     del record['data']
                     del record['cond']
                     continue
@@ -151,7 +151,7 @@ class Collator:
 
         elif task_id == 1:
             for record in minibatch:
-                if len(record['data']) < sample_rate:
+                if record['data'].shape[0] < sample_rate:
                     del record['data']
                     del record['cond']
                     continue
@@ -223,11 +223,11 @@ def from_path(params, is_distributed=False):
         batch_size=params.batch_size,
         collate_fn=Collator(params).collate,
         shuffle=not is_distributed,
-        num_workers=8,
+        num_workers=0,
         sampler=DistributedSampler(dataset) if is_distributed else None,
         pin_memory=True,
         drop_last=True,
-        persistent_workers=True
+        persistent_workers=False
     )
 
 
@@ -251,5 +251,5 @@ def from_path_inference(params):
         batch_size=params.inference_batch_size,
         collate_fn=Collator(params).collate,
         shuffle=False,
-        num_workers=os.cpu_count()
+        num_workers=0
     )
