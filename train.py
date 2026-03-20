@@ -26,16 +26,30 @@ def _train_impl(replica_id, model, dataset, params):
     learner.is_master = (replica_id == 0)
     learner.restore_from_checkpoint()
     learner.train(max_iter=params.max_iter)
-
+    
 
 def train(params):
     dataset = from_path(params)
-    if params.task_id==0:
-        model = tfdiff_eeg(params).cuda()
-    elif params.task_id==1:
-        model = tfdiff_mimo(params).cuda()
-    else:    
-        model = tfdiff_WiFi(params).cuda()
+
+    if torch.cuda.is_available():
+        device = torch.device("cuda")
+    else:
+        device = torch.device("cpu")
+
+    if params.task_id == 0:
+        model = tfdiff_WiFi(params).to(device)
+    elif params.task_id == 1:
+        model = tfdiff_fmcw(params).to(device)
+    elif params.task_id == 2:
+        model = tfdiff_mimo(params).to(device)
+    elif params.task_id == 3:
+        model = tfdiff_eeg(params).to(device)
+    else:
+        raise ValueError("Unexpected task_id.")
+
+    # learner.py expects model.device
+    model.device = device
+
     _train_impl(0, model, dataset, params)
 
 
